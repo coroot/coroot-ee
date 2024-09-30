@@ -1,0 +1,71 @@
+version: "3.8"
+
+volumes:
+  prometheus_data: {}
+  clickhouse_data: {}
+  clickhouse_logs: {}
+  coroot_data: {}
+  cluster_agent_data: {}
+
+services:
+  coroot:
+    restart: always
+    image: ghcr.io/coroot/coroot-ee
+    volumes:
+      - coroot_data:/data
+    ports:
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
+    command:
+      - '--data-dir=/data'
+      - '--bootstrap-prometheus-url=http://prometheus:9090'
+      - '--bootstrap-refresh-interval=15s'
+      - '--bootstrap-clickhouse-address=clickhouse:9000'
+    environment:
+      - LICENSE_KEY=${LICENSE_KEY}
+    depends_on:
+      - clickhouse
+      - prometheus
+
+  cluster-agent:
+    restart: always
+    image: ghcr.io/coroot/coroot-cluster-agent
+    volumes:
+      - cluster_agent_data:/data
+    command:
+      - '--coroot-url=http://coroot:8080'
+      - '--metrics-scrape-interval=15s'
+      - '--metrics-wal-dir=/data'
+    depends_on:
+      - coroot
+
+  prometheus:
+    restart: always
+    image: prom/prometheus:v2.45.4
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-remote-write-receiver'
+    ports:
+      - '9090:9090'
+
+  clickhouse:
+    restart: always
+    image: clickhouse/clickhouse-server:24.3
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      - '9000:9000'
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
